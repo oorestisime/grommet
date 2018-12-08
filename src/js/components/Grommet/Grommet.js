@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { Component, useEffect, useState } from 'react';
 import MobileDetect from 'mobile-detect';
 
 import { colorIsDark } from 'grommet-styles';
@@ -13,89 +13,69 @@ import { StyledGrommet } from './StyledGrommet';
 
 const wrapWithHocs = withDocs('Grommet');
 
-class GrommetImpl extends Component {
-  static displayName = 'Grommet';
+const deviceResponsive = (userAgent, theme) => {
+  if (userAgent) {
+    const md = new MobileDetect(userAgent);
+    if (md.phone()) {
+      return getDeviceBreakpoint('phone', theme);
+    }
+    if (md.tablet()) {
+      return getDeviceBreakpoint('tablet', theme);
+    }
+    return getDeviceBreakpoint('computer', theme);
+  }
+  return undefined;
+}
 
-  static getDerivedStateFromProps(nextProps, prevState) {
-    const { theme = {} } = nextProps;
-    const { theme: stateTheme, themeProp } = prevState;
+const getDefaultBreakpoint = (theme) => {
+  // TODO DEBUG workaround because first theme empty and not the base theme
+  // at least in storybook
+  if (theme.global.deviceBreakpoints) {
+    return theme.global.deviceBreakpoints.table
+  }
+  return 'medium'
+}
 
-    const nextTheme = deepMerge(baseTheme, theme);
-    if (!stateTheme || theme !== themeProp) {
-      if (typeof theme.dark === 'undefined') {
-        // calculate if background is dark or not
-        // otherwise respect the property passed in the theme
-        const { colors } = nextTheme.global;
-        const color = colors.background;
-        nextTheme.dark = color ? colorIsDark(color) : false;
+function GrommetImpl(props) {
+  const { theme: propsTheme, userAgent, children, ...rest } = props;
+  const [theme, setTheme] = useState(propsTheme)
+  const [themeProp, setThemeProp] = useState()
+  const [responsive, setResponsive] = useState(
+    deviceResponsive(userAgent, theme) || getDefaultBreakpoint(theme))
+
+  useEffect(() => {
+    const onResize = () => {
+      const breakpoint = getBreakpoint(window.innerWidth, theme);
+      if (breakpoint !== responsive) {
+        setResponsive(breakpoint);
       }
-      return {
-        theme: nextTheme,
-        themeProp: theme,
-      };
     }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize)
+  })
 
-    return null;
-  }
-
-  state = {};
-
-  componentDidMount() {
-    window.addEventListener('resize', this.onResize);
-    this.onResize();
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener('resize', this.onResize);
-  }
-
-  onResize = () => {
-    const { theme, responsive } = this.state;
-
-    const breakpoint = getBreakpoint(window.innerWidth, theme);
-
-    if (breakpoint !== responsive) {
-      this.setState({ responsive: breakpoint });
+  // --- deriveStateFromProps ---
+  const nextTheme = deepMerge(baseTheme, propsTheme);
+  if (!theme || propsTheme !== themeProp) {
+    if (typeof props.theme.dark === 'undefined') {
+      // calculate if background is dark or not
+      // otherwise respect the property passed in the theme
+      const { colors } = propsTheme.global;
+      const color = colors.background;
+      nextTheme.dark = color ? colorIsDark(color) : false;
     }
+    setTheme(nextTheme)
+    setThemeProp(theme)
+
   };
 
-  deviceResponsive() {
-    const { userAgent } = this.props;
-    const { theme } = this.state;
-
-    if (userAgent) {
-      const md = new MobileDetect(userAgent);
-      if (md.phone()) {
-        return getDeviceBreakpoint('phone', theme);
-      }
-      if (md.tablet()) {
-        return getDeviceBreakpoint('tablet', theme);
-      }
-      return getDeviceBreakpoint('computer', theme);
-    }
-    return undefined;
-  }
-
-  render() {
-    const { children, ...rest } = this.props;
-    delete rest.theme;
-    const { theme, responsive: stateResponsive } = this.state;
-
-    // Value from state should be correct once we resize
-    // On first render we try to guess otherwise set the default as a tablet
-    const responsive =
-      stateResponsive ||
-      this.deviceResponsive() ||
-      theme.global.deviceBreakpoints.tablet;
-
-    return (
-      <ThemeContext.Provider value={theme}>
-        <ResponsiveContext.Provider value={responsive}>
-          <StyledGrommet {...rest}>{children}</StyledGrommet>
-        </ResponsiveContext.Provider>
-      </ThemeContext.Provider>
-    );
-  }
+  return (
+    <ThemeContext.Provider value={theme}>
+      <ResponsiveContext.Provider value={responsive}>
+        <StyledGrommet {...rest}>{children}</StyledGrommet>
+      </ResponsiveContext.Provider>
+    </ThemeContext.Provider>
+  );
 }
 
 export const Grommet = wrapWithHocs(GrommetImpl);
